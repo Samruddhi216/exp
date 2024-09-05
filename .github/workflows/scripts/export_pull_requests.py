@@ -4,7 +4,7 @@ import pandas as pd
 # GitHub repository details
 REPO_OWNER = 'Samruddhi216'
 REPO_NAME = 'table'
-GITHUB_TOKEN = 'Workflow'
+GITHUB_TOKEN = 'EXPORT_TOKEN'
 
 # GitHub API URL for pull requests
 API_URL = f'https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls'
