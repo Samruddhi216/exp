@@ -7,7 +7,7 @@ REPO_NAME = 'table'
 GITHUB_TOKEN = 'EXPORT_TOKEN'
 
 # GitHub API URL for pull requests
-API_URL = f'https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/pulls'
+API_URL = f'https://api.github.com/repos/{Samruddhi216}/{table}/pulls'
 
 headers = {
     'Authorization': f'token {GITHUB_TOKEN}',
