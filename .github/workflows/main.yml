@@ -1,0 +1,120 @@
+name: Commit Timestamp
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - closed
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  commit-timestamp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install gh jq
+
+      - name: Get timestamps and PR info
+        id: get-info
+        run: |
+          # For latest commit hash
+          HASH=$(git rev-parse HEAD)
+          # ISO 8601 Format
+          TIMESTAMP=$(git show -s --format=%ci $HASH)
+          # Extract date, time, and offset
+          DATE=$(echo $TIMESTAMP | cut -d' ' -f1)
+          TIME=$(echo $TIMESTAMP | cut -d' ' -f2)
+          OFFSET=$(echo $TIMESTAMP | cut -d' ' -f3)
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+          echo "DATE=$DATE" >> $GITHUB_ENV
+          echo "TIME=$TIME" >> $GITHUB_ENV
+          echo "OFFSET=$OFFSET" >> $GITHUB_ENV
+
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            PR_NUMBER=${{ github.event.pull_request.number }}
+            PR_INFO=$(gh pr view $PR_NUMBER --json title,author,body,url,mergedAt --jq '{title: .title, author: .author.login, url: .url, mergedAt: .mergedAt}')
+            PR_TITLE=$(echo $PR_INFO | jq -r .title)
+            PR_AUTHOR=$(echo $PR_INFO | jq -r .author)
+            PR_URL=$(echo $PR_INFO | jq -r .url)
+            PR_MERGE_TIMESTAMP=$(echo $PR_INFO | jq -r .mergedAt)
+
+            if [ "$PR_MERGE_TIMESTAMP" == "null" ] || [ -z "$PR_MERGE_TIMESTAMP" ]; then
+              FORMATTED_TIMESTAMP="Not available"
+            else
+              # Format the merge timestamp
+              FORMATTED_TIMESTAMP=$(date -d "$PR_MERGE_TIMESTAMP" +"%Y-%m-%d %H:%M:%S %z")
+            fi
+
+            echo "PR_TITLE=$PR_TITLE" >> $GITHUB_ENV
+            echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
+            echo "PR_URL=$PR_URL" >> $GITHUB_ENV
+            echo "PR_MERGE_TIMESTAMP=$FORMATTED_TIMESTAMP" >> $GITHUB_ENV
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add comment to PR with details
+        if: github.event_name == 'pull_request'
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          TIMESTAMP="${{ env.TIMESTAMP }}"
+          PR_TITLE="${{ env.PR_TITLE }}"
+          PR_AUTHOR="${{ env.PR_AUTHOR }}"
+          PR_URL="${{ env.PR_URL }}"
+          PR_MERGE_TIMESTAMP="${{ env.PR_MERGE_TIMESTAMP }}"
+          COMMENT="**Commit Timestamp**: ${TIMESTAMP}\n**PR Merge Timestamp**: ${PR_MERGE_TIMESTAMP}\n\n**PR Title**: ${PR_TITLE}\n**Author**: ${PR_AUTHOR}\n**PR Link**: ${PR_URL}"
+          gh pr comment $PR_NUMBER --body "$COMMENT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if commit is from merged PR
+        id: check-merge
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ] && [ "${{ github.event.pull_request.merged }}" == "true" ]; then
+            echo "MERGED=true" >> $GITHUB_ENV
+          else
+            echo "MERGED=false" >> $GITHUB_ENV
+          fi
+
+      - name: Set Git committer identity
+        if: env.MERGED == 'true'
+        run: |
+          PR_AUTHOR_NAME="${{ github.event.pull_request.user.login }}"
+          PR_AUTHOR_EMAIL="${PR_AUTHOR_NAME}@github.com"
+          git config --local user.email "$PR_AUTHOR_EMAIL"
+          git config --local user.name "$PR_AUTHOR_NAME"
+
+      - name: Modify the commit message if the PR is merged
+        if: env.MERGED == 'true'
+        run: |
+          # get the PR merge commit timestamp
+          PR_MERGE_TIMESTAMP=$(gh pr view ${{ github.event.pull_request.number }} --json mergedAt --jq .mergedAt)
+
+          if [ "$PR_MERGE_TIMESTAMP" == "null" ] || [ -z "$PR_MERGE_TIMESTAMP" ]; then
+            echo "PR merge timestamp is not available."
+            exit 1
+          fi
+
+          # format the timestamp
+          TIMESTAMP=$(date -d "$PR_MERGE_TIMESTAMP" +"%Y-%m-%d %H:%M:%S %z")
+          # get the last commit message
+          LAST_COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+          # prepare the new message with timestamp
+          NEW_MESSAGE="[${TIMESTAMP}] ${LAST_COMMIT_MESSAGE}"
+          # amend the commit message
+          git commit --amend -m "$NEW_MESSAGE"
+          git push --force
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
