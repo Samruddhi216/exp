@@ -19,6 +19,11 @@ jobs:
       - name: Check out repo code
         uses: actions/checkout@v4
 
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install gh
+
       - name: Get timestamps and PR info
         id: get-info
         run: |
@@ -40,15 +45,22 @@ jobs:
 
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             PR_NUMBER=${{ github.event.pull_request.number }}
-            PR_INFO=$(gh pr view $PR_NUMBER --json title,author,body,url --jq '{title: .title, author: .author.login, url: .url}')
+            PR_INFO=$(gh pr view $PR_NUMBER --json title,author,body,url,mergedAt --jq '{title: .title, author: .author.login, url: .url, mergedAt: .mergedAt}')
             PR_TITLE=$(echo $PR_INFO | jq -r .title)
             PR_AUTHOR=$(echo $PR_INFO | jq -r .author)
             PR_URL=$(echo $PR_INFO | jq -r .url)
+            PR_MERGE_TIMESTAMP=$(echo $PR_INFO | jq -r .mergedAt)
+
+            # Format the merge timestamp
+            FORMATTED_TIMESTAMP=$(date -d "$PR_MERGE_TIMESTAMP" +"%Y-%m-%d %H:%M:%S %z")
 
             echo "PR_TITLE=$PR_TITLE" >> $GITHUB_ENV
             echo "PR_AUTHOR=$PR_AUTHOR" >> $GITHUB_ENV
             echo "PR_URL=$PR_URL" >> $GITHUB_ENV
+            echo "PR_MERGE_TIMESTAMP=$FORMATTED_TIMESTAMP" >> $GITHUB_ENV
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add comment to PR with details
         if: github.event_name == 'pull_request'
@@ -58,12 +70,13 @@ jobs:
           PR_TITLE="${{ env.PR_TITLE }}"
           PR_AUTHOR="${{ env.PR_AUTHOR }}"
           PR_URL="${{ env.PR_URL }}"
+          PR_MERGE_TIMESTAMP="${{ env.PR_MERGE_TIMESTAMP }}"
 
-          COMMENT="**Commit Timestamp**: ${TIMESTAMP}\n\n**PR Title**: ${PR_TITLE}\n**Author**: ${PR_AUTHOR}\n**PR Link**: ${PR_URL}"
+          COMMENT="**Commit Timestamp**: ${TIMESTAMP}\n**PR Merge Timestamp**: ${PR_MERGE_TIMESTAMP}\n\n**PR Title**: ${PR_TITLE}\n**Author**: ${PR_AUTHOR}\n**PR Link**: ${PR_URL}"
 
           gh pr comment $PR_NUMBER --body "$COMMENT"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if commit is from merged PR
         id: check-merge
@@ -102,4 +115,4 @@ jobs:
           git commit --amend -m "$NEW_MESSAGE"
           git push --force
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
