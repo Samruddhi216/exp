@@ -1,0 +1,15 @@
+name: Example Workflow
+
+on: [push]
+
+jobs:
+  install-gh:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        run: |
+          brew install gh
