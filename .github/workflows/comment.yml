@@ -1,0 +1,80 @@
+name: Commit Timestamp
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - closed
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  commit-timestamp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo code
+        uses: actions/checkout@v4
+
+      - name: Get timestamps
+        run: |
+          # For latest commit hash
+          HASH=$(git rev-parse HEAD)
+
+          # ISO 8601 Format
+          TIMESTAMP=$(git show -s --format=%ci $HASH)
+
+          # Extract date, time, and offset
+          DATE=$(echo $TIMESTAMP | cut -d' ' -f1)
+          TIME=$(echo $TIMESTAMP | cut -d' ' -f2)
+          OFFSET=$(echo $TIMESTAMP | cut -d' ' -f3)
+
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+          echo "DATE=$DATE" >> $GITHUB_ENV
+          echo "TIME=$TIME" >> $GITHUB_ENV
+          echo "OFFSET=$OFFSET" >> $GITHUB_ENV
+
+      - name: Add the comment to PR
+        if: github.event_name == 'pull_request'
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          TIMESTAMP="${{ env.TIMESTAMP }}"
+          COMMENT="**Commit Timestamp**: ${TIMESTAMP}"
+
+          gh pr comment $PR_NUMBER --body "$COMMENT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if commit is from merged PR
+        id: check-merge
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ] && [ "${{ github.event.pull_request.merged }}" == "true" ]; then
+            echo "MERGED=true" >> $GITHUB_ENV
+          else
+            echo "MERGED=false" >> $GITHUB_ENV
+          fi
+
+      - name: Set Git committer identity
+        if: env.MERGED == 'true'
+        run: |
+          PR_AUTHOR_NAME="${{ github.event.pull_request.user.login }}"
+          PR_AUTHOR_EMAIL="${PR_AUTHOR_NAME}@github.com"
+
+          git config --local user.email "$PR_AUTHOR_EMAIL"
+          git config --local user.name "$PR_AUTHOR_NAME"
+
+      - name: Modify the commit message if the PR is merged
+        if: env.MERGED == 'true'
+        run: |
+          # get the last commit message
+          LAST_COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+
+          # prepare the new message with timestamp
+          NEW_MESSAGE="[${{ env.TIMESTAMP }}] ${LAST_COMMIT_MESSAGE}"
+
+          # amend the commit message
+          git commit --amend -m "$NEW_MESSAGE"
+          git push --force
