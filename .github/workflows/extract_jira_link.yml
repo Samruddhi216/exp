@@ -1,0 +1,42 @@
+name: Extract JIRA Link and Comment on PR
+
+on:
+  pull_request:
+    types: [opened, edited]
+
+jobs:
+  extract_and_comment:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Step 2: Extract JIRA link from PR description
+      - name: Extract JIRA link from PR description
+        id: extract-jira-link
+        run: |
+          # Fetch the PR description using GitHub API
+          PR_DESCRIPTION=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }} | jq -r '.body')
+
+          # Extract JIRA link using regex
+          JIRA_LINK=$(echo "$PR_DESCRIPTION" | grep -oP '(?<=https://jira\.target\.com/browse/)[^\s]+')
+
+          # Format the extracted JIRA link
+          JIRA_URL="https://jira.target.com/browse/$JIRA_LINK"
+
+          # Set the JIRA link as an output
+          echo "::set-output name=jira_link::$JIRA_URL"
+
+      # Step 3: Post a comment on the PR with the extracted JIRA link
+      - name: Post JIRA link comment on PR
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ### Extracted JIRA Ticket
+
+            **JIRA Ticket / GitHub Issue**: [${{ steps.extract-jira-link.outputs.jira_link }}](${{ steps.extract-jira-link.outputs.jira_link }})
